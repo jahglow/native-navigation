@@ -80,7 +80,7 @@ class BlockBarButtonItem: UIBarButtonItem {
     }
     if let titleTextAttributes = titleTextAttributes {
       // TODO(lmr): what about other control states? do we care?
-      setTitleTextAttributes(titleTextAttributes, for: .normal)
+        setTitleTextAttributes(titleTextAttributes as [NSAttributedStringKey : Any], for: .normal)
     }
   }
 
@@ -578,10 +578,10 @@ open class DefaultReactNavigationImplementation: ReactNavigationImplementation {
         var combined = titleAttributes
 
         if let appearance = UINavigationBar.appearance().titleTextAttributes {
-          combined = appearance.combineWith(values: titleAttributes)
+            combined = appearance.combineWith(values: titleAttributes as [NSAttributedStringKey : Any]) as [NSAttributedStringKey : Any]
         }
 
-        navBar.titleTextAttributes = combined
+        navBar.titleTextAttributes = combined as [NSAttributedStringKey : Any]
       }
 
       if let backIndicatorImage = imageForKey("backIndicatorImage", next) {

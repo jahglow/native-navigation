@@ -40,8 +40,8 @@ extension Dictionary {
     return dict
   }
 
-#if swift(>=3.2)
-#else
+//#if swift(>=3.2)
+//#else
   public func mapValues<OutValue>(transform: (Value) throws -> OutValue) rethrows -> [Key: OutValue] {
     var dict = [Key: OutValue]()
     for (key, value) in self {
@@ -49,5 +49,5 @@ extension Dictionary {
     }
     return dict
   }
-#endif
+//#endif
 }
