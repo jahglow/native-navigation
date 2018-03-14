@@ -62,13 +62,13 @@ public class DefaultNavigationImplementation implements NavigationImplementation
     defaults = new Defaults();
     defaults.foregroundColor = Color.BLACK;
     defaults.screenColor = Color.WHITE;
-    defaults.backgroundColor = Color.GRAY;
+    defaults.backgroundColor = Color.WHITE;
     defaults.statusBarColor = Color.BLACK;
     defaults.statusBarTranslucent = false;
     defaults.elevation = 4.0f;
     defaults.alpha = 1.0f;
     defaults.overflowIconSource = null;
-    defaults.displayHomeAsUp = true;
+    defaults.displayHomeAsUp = false;
     defaults.homeButtonEnabled = true;
     defaults.showHome = true;
     defaults.showTitle = true;
@@ -260,14 +260,14 @@ public class DefaultNavigationImplementation implements NavigationImplementation
       foregroundColor = next.getInt("foregroundColor");
     }
 
-    if (stringHasChanged("title", prev, next)) {
+//    if (stringHasChanged("title", prev, next)) {
       if (next.hasKey("title")) {
         String title = next.getString("title");
         toolbar.setTitle(title);
       } else {
         toolbar.setTitle(null);
       }
-    }
+//    }
 
     if (firstCall || numberHasChanged("titleColor", prev, next)) {
       if (next.hasKey("titleColor")) {
@@ -494,7 +494,7 @@ public class DefaultNavigationImplementation implements NavigationImplementation
 
     // we are just going to *always* invalidate this menu when we
     // reconcile, and handle everything in `prepareOptionsMenu`.
-    component.getActivity().supportInvalidateOptionsMenu();
+    component.invalidateMenu();
   }
 
   public void prepareOptionsMenu(
@@ -505,7 +505,7 @@ public class DefaultNavigationImplementation implements NavigationImplementation
       ReadableMap prev,
       ReadableMap next
   ) {
-    Log.d(TAG, "prepareOptionsMenu");
+    Log.d(TAG, "prepareOptionsMenu: " + component);
 
     if (arrayHasChanged("rightButtons", prev, next)) {
       if (next.hasKey("rightButtons")) {

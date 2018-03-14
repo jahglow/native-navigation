@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { Dimensions } from 'react-native';
 
-import Navigator from 'native-navigation';
+import Navigator from '../../index';
 
 import LoremImage from '../components/LoremImage';
 import Screen from '../components/Screen';

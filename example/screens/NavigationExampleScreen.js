@@ -6,7 +6,7 @@ import {
   Dimensions,
 } from 'react-native';
 
-import Navigator from 'native-navigation';
+import Navigator from '../../index';
 
 import LoremImage from '../components/LoremImage';
 import Screen from '../components/Screen';
@@ -23,7 +23,9 @@ const { width } = Dimensions.get('window');
 export default class NavigationExampleScreen extends Component {
   render() {
     return (
-      <Screen>
+      <Screen
+        title={this.context.nativeNavigationInstanceId}
+      >
         <LoremImage
           width={width}
           height={width / 1.6}
@@ -37,8 +39,28 @@ export default class NavigationExampleScreen extends Component {
           onPress={() => Navigator.present('ScreenOne')}
         />
         <Row
-          title="Push new screen"
-          onPress={() => Navigator.push('ScreenOne')}
+          title="Push new screen (inherit tabs state)"
+          onPress={() => Navigator.push('ScreenOne', {})}
+        />
+        <Row
+          title="Push new screen (with tabs)"
+          onPress={() => Navigator.push(
+            'ScreenOne',
+            {},
+            {
+              prefersBottomBarHidden: false,
+            },
+          )}
+        />
+        <Row
+          title="Push new screen (without tabs)"
+          onPress={() => Navigator.push(
+            'ScreenOne',
+            {},
+            {
+              prefersBottomBarHidden: true,
+            },
+          )}
         />
         <Row
           title="Pop"
