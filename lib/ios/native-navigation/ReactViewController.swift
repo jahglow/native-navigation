@@ -74,7 +74,7 @@ open class ReactViewController: UIViewController {
   var transition: ReactSharedElementTransition?
   var eagerNavigationController: UINavigationController?
   open var reactFlowId: String?
-  open var showTabBar: Bool = false // TODO(lmr): showTabBar? is this needed?
+  open var prefersBottomBarHidden: Bool = false
   open weak var delegate: ReactViewControllerDelegate?
   var dismissResultCode: ReactFlowResultCode?
   var dismissPayload: [String: AnyObject]?
@@ -182,7 +182,6 @@ open class ReactViewController: UIViewController {
 
   override open func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
-    updateBarHeightIfNeeded()
     emitEvent("onAppear", body: nil)
   }
 
@@ -214,6 +213,24 @@ open class ReactViewController: UIViewController {
     }
   }
 
+  override open func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+
+    updateBarHeightIfNeeded()
+  }
+
+  final override public var hidesBottomBarWhenPushed: Bool {
+    get {
+      guard navigationController?.viewControllers.last == self else {
+        return false
+      }
+
+      return prefersBottomBarHidden
+    }
+    set {
+      super.hidesBottomBarWhenPushed = newValue
+    }
+  }
 
 
 
@@ -353,7 +370,6 @@ open class ReactViewController: UIViewController {
     prevConfig = renderedConfig
     renderedConfig = initialConfig.combineWith(values: props)
     reconcileScreenConfig()
-    updateBarHeightIfNeeded()
   }
 
   func updateBarHeightIfNeeded() {
@@ -364,7 +380,15 @@ open class ReactViewController: UIViewController {
     )
     if newHeight != barHeight {
       barHeight = newHeight
-      emitEvent("onBarHeightChanged", body: barHeight as AnyObject)
+      emitEvent("onBarHeightChanged", body: [
+        "height": barHeight,
+        "force": isCurrentlyTransitioning || true // force it - we're not using animations currently?
+      ] as AnyObject)
+
+      let newProps = propsWithMetadata(props, nativeNavigationInstanceId, barHeight)
+      if let rView = view as? RCTRootView {
+        rView.appProperties = newProps
+      }
     }
   }
 
@@ -433,7 +457,7 @@ extension ReactViewController : ReactAnimationFromContentVendor {
     animationContainer.sendSubview(toBack: snapshot.screenWithoutElements.view)
     return ReactAnimationFromContent(
       screenWithoutElements: snapshot.screenWithoutElements.view,
-      sharedElements: snapshot.sharedElements.mapValues { $0.view }
+      sharedElements: snapshot.sharedElements.mapValues(transform: { $0.view })
     )
   }
 
@@ -450,8 +474,7 @@ extension ReactViewController : ReactAnimationToContentVendor {
     animationContainer.sendSubview(toBack: snapshot.screenWithoutElements.view)
     return ReactAnimationToContent(
       screenWithoutElements: snapshot.screenWithoutElements.view,
-      sharedElements: snapshot.sharedElements.mapValues { $0.view }
+      sharedElements: snapshot.sharedElements.mapValues(transform: { $0.view })
     )
   }
 }
-

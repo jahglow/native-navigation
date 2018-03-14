@@ -13,7 +13,6 @@ import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
 import android.support.v7.app.AppCompatActivity;
 import android.transition.Fade;
-import android.util.Log;
 import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
@@ -36,9 +35,11 @@ public class ScreenCoordinator {
   private static final String TAG = ScreenCoordinator.class.getSimpleName();
   static final String EXTRA_PAYLOAD = "payload";
   private static final String TRANSITION_GROUP = "transitionGroup";
+  private static final String PREFERS_BOTTOM_BAR_HIDDEN = "prefersBottomBarHidden";
 
   enum PresentAnimation {
     Modal(R.anim.slide_up, R.anim.delay, R.anim.delay, R.anim.slide_down),
+    ModalNoExit(R.anim.slide_up, R.anim.delay, 0, 0),
     Push(R.anim.slide_in_right, R.anim.slide_out_left, R.anim.slide_in_left, R.anim.slide_out_right),
     Fade(R.anim.fade_in, R.anim.fade_out, R.anim.fade_in, R.anim.fade_out);
 
@@ -81,41 +82,54 @@ public class ScreenCoordinator {
     // TODO
   }
 
-  public void pushScreen(String moduleName) {
-    pushScreen(moduleName, null, null);
-  }
-
-  public void pushScreen(String moduleName, @Nullable Bundle props, @Nullable Bundle options) {
+  public void pushScreen(String moduleName, @Nullable Bundle props, @Nullable Bundle options, Promise promise) {
     Fragment fragment = ReactNativeFragment.newInstance(moduleName, props);
-    pushScreen(fragment, options);
+    pushScreen(fragment, options, promise);
   }
 
-  public void pushScreen(Fragment fragment) {
-    pushScreen(fragment, null);
-  }
-
-  public void pushScreen(Fragment fragment, @Nullable Bundle options) {
+  public void pushScreen(Fragment fragment, @Nullable Bundle options, Promise promise) {
     FragmentTransaction ft = activity.getSupportFragmentManager().beginTransaction()
-            .setAllowOptimization(true);
+        .setAllowOptimization(true);
     Fragment currentFragment = getCurrentFragment();
     if (currentFragment == null) {
       throw new IllegalStateException("There is no current fragment. You must present one first.");
     }
 
     if (ViewUtils.isAtLeastLollipop() && options != null && options.containsKey(TRANSITION_GROUP)) {
-        setupFragmentForSharedElement(currentFragment,  fragment, ft, options);
+      setupFragmentForSharedElement(currentFragment, fragment, ft, options);
     } else {
-      PresentAnimation anim = PresentAnimation.Push;
+      PresentAnimation anim;
+      if (((ReactNativeFragment) fragment).isMainFragment()) {
+        anim = PresentAnimation.Fade;
+      }
+      else {
+        anim = PresentAnimation.Push;
+      }
+
       ft.setCustomAnimations(anim.enter, anim.exit, anim.popEnter, anim.popExit);
     }
+
+    if (fragment instanceof ReactNativeFragment) {
+      ReactNativeFragment rnf = (ReactNativeFragment) fragment;
+
+      boolean currentPrefersBottomBarHidden = false; // default
+
+      if (currentFragment instanceof ReactNativeFragment) {
+        ReactNativeFragment currentRnf = (ReactNativeFragment) currentFragment;
+          currentPrefersBottomBarHidden = currentRnf.isPrefersBottomBarHidden();
+      }
+
+      rnf.setPrefersBottomBarHidden(options != null ? options.getBoolean(PREFERS_BOTTOM_BAR_HIDDEN, currentPrefersBottomBarHidden) : currentPrefersBottomBarHidden);
+    }
+
     BackStack bsi = getCurrentBackStack();
     ft
             .detach(currentFragment)
             .add(container.getId(), fragment)
             .addToBackStack(null)
             .commit();
-    bsi.pushFragment(fragment);
-    Log.d(TAG, toString());
+    bsi.pushFragment(fragment, promise);
+    activity.getSupportFragmentManager().executePendingTransactions();
   }
 
   @TargetApi(Build.VERSION_CODES.LOLLIPOP)
@@ -144,9 +158,15 @@ public class ScreenCoordinator {
       @Nullable Bundle props,
       @Nullable Bundle options,
       @Nullable Promise promise) {
-    // TODO: use options
+
+    PresentAnimation anim = PresentAnimation.Modal;
+    if (options != null && options.getBoolean("noExitAnimation")) {
+      anim = PresentAnimation.ModalNoExit;
+    }
+
+
     Fragment fragment = ReactNativeFragment.newInstance(moduleName, props);
-    presentScreen(fragment, PresentAnimation.Modal, promise);
+    presentScreen(fragment, anim, promise);
   }
 
   public void presentScreen(Fragment fragment) {
@@ -183,17 +203,28 @@ public class ScreenCoordinator {
         .setCustomAnimations(anim.enter, anim.exit, anim.popEnter, anim.popExit);
 
     Fragment currentFragment = getCurrentFragment();
-    if (currentFragment != null && !isFragmentTranslucent(fragment)) {
-      container.willDetachCurrentScreen();
-      ft.detach(currentFragment);
+//    if (currentFragment != null && !isFragmentTranslucent(fragment)) {
+//      container.willDetachCurrentScreen();
+//      ft.detach(currentFragment);
+//    }
+
+    if (fragment instanceof ReactNativeFragment) {
+      ReactNativeFragment rnf = (ReactNativeFragment)fragment;
+
+      // Modal should not inherit any menu state, unless it's a tab activity
+      if (currentFragment == null) {
+        rnf.setPrefersBottomBarHidden(false);
+      } else {
+        rnf.setPrefersBottomBarHidden(true);
+      }
     }
+
     ft
         .add(container.getId(), fragment)
         .addToBackStack(bsi.getTag())
         .commit();
     activity.getSupportFragmentManager().executePendingTransactions();
-    bsi.pushFragment(fragment);
-    Log.d(TAG, toString());
+    bsi.pushFragment(fragment, null);
   }
 
   public void dismissAll() {
@@ -204,18 +235,22 @@ public class ScreenCoordinator {
   }
 
   public void onBackPressed() {
-    pop();
+    pop(null);
   }
 
-  public void pop() {
+  public ReactNativeFragment pop(final Map<String, Object> payload) {
     BackStack bsi = getCurrentBackStack();
     if (bsi.getSize() == 1) {
       dismiss();
-      return;
+      return null;
     }
-    bsi.popFragment();
-    activity.getSupportFragmentManager().popBackStack();
-    Log.d(TAG, toString());
+    Promise pushPromise = bsi.popFragment();
+    activity.getSupportFragmentManager().popBackStackImmediate();
+    activity.getSupportFragmentManager().executePendingTransactions();
+
+    deliverPromise(pushPromise, -1, payload);
+
+    return (bsi.getSize() > 0) ? (ReactNativeFragment) bsi.peekFragment() : null;
   }
 
   public void dismiss() {
@@ -226,15 +261,15 @@ public class ScreenCoordinator {
     dismiss(resultCode, payload, true);
   }
 
-  private void dismiss(int resultCode, Map<String, Object> payload, boolean finishIfEmpty) {
+  private void dismiss(final int resultCode, final Map<String, Object> payload, boolean finishIfEmpty) {
     BackStack bsi = backStacks.pop();
-    Promise promise = bsi.getPromise();
-    deliverPromise(promise, resultCode, payload);
+    final Promise promise = bsi.getPresentPromise();
     // This is needed so we can override the pop exit animation to slide down.
     PresentAnimation anim = bsi.getAnimation();
 
     if (backStacks.isEmpty()) {
       if (finishIfEmpty) {
+        deliverPromise(promise, resultCode, payload);
         activity.supportFinishAfterTransition();
         return;
       }
@@ -245,25 +280,37 @@ public class ScreenCoordinator {
 
     activity.getSupportFragmentManager()
             .popBackStackImmediate(bsi.getTag(), FragmentManager.POP_BACK_STACK_INCLUSIVE);
-    Log.d(TAG, toString());
+
+    Fragment current = getCurrentFragment();
+    if (current != null && current instanceof ReactNativeFragment) {
+      ReactNativeFragment rnf = ((ReactNativeFragment) current);
+      rnf.setPrefersBottomBarHidden(rnf.isPrefersBottomBarHidden());
+    }
+
+    deliverPromise(promise, resultCode, payload);
   }
 
   public Animation onCreateAnimation(int transit, boolean enter, int nextAnim) {
     if (!enter && nextPopExitAnim != 0) {
       // If this fragment was pushed on to the stack, it's pop exit animation will be
       // slide out right. However, we want it to be slide down in this case.
-      int anim = nextPopExitAnim;
+      int animRes = nextPopExitAnim;
       nextPopExitAnim = 0;
-      return AnimationUtils.loadAnimation(activity, anim);
+      return AnimationUtils.loadAnimation(activity, animRes);
     }
     return null;
   }
 
   private void deliverPromise(Promise promise, int resultCode, Map<String, Object> payload) {
     if (promise != null) {
-      Map<String, Object> newPayload =
-              MapBuilder.of(EXTRA_CODE, resultCode, EXTRA_PAYLOAD, payload);
-      promise.resolve(ConversionUtil.toWritableMap(newPayload));
+      if (payload != null) {
+        Map<String, Object> newPayload =
+            MapBuilder.of(EXTRA_CODE, resultCode, EXTRA_PAYLOAD, payload);
+        promise.resolve(ConversionUtil.toWritableMap(newPayload));
+      }
+      else {
+        promise.resolve(null);
+      }
     }
   }
 

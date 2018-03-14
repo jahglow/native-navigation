@@ -39,7 +39,7 @@ import React
 
 // this is a convenience class to allow us to easily assign lambdas as press handlers
 class BlockBarButtonItem: UIBarButtonItem {
-  var actionHandler: ((Void) -> Void)?
+  var actionHandler: (() -> Void)?
 
   convenience init(title: String?, style: UIBarButtonItemStyle) {
     self.init(title: title, style: style, target: nil, action: #selector(barButtonItemPressed))
@@ -63,7 +63,7 @@ class BlockBarButtonItem: UIBarButtonItem {
     style: UIBarButtonItemStyle,
     enabled: Bool?,
     tintColor: UIColor?,
-    titleTextAttributes: [String: Any]?
+    titleTextAttributes: [NSAttributedStringKey: Any]?
   ) {
     if let barButtonSystemItem = barButtonSystemItem {
       self.init(barButtonSystemItem: barButtonSystemItem)
@@ -84,7 +84,7 @@ class BlockBarButtonItem: UIBarButtonItem {
     }
   }
 
-  func barButtonItemPressed(sender: UIBarButtonItem) {
+  @objc func barButtonItemPressed(sender: UIBarButtonItem) {
     actionHandler?()
   }
 }
@@ -248,19 +248,19 @@ func statusBarAnimationFromString(_ string: String?) -> UIStatusBarAnimation {
 func textAttributesFromPrefix(
   _ prefix: String,
   _ props: [String: AnyObject]
-) -> [String: Any]? {
-  var attributes: [String: Any] = [:]
+) -> [NSAttributedStringKey: Any]? {
+  var attributes: [NSAttributedStringKey: Any] = [:]
   if let color = colorForKey("\(prefix)Color", props) {
-    attributes[NSForegroundColorAttributeName] = color
+    attributes[NSAttributedStringKey.foregroundColor] = color
   } else if let color = colorForKey("foregroundColor", props) {
-    attributes[NSForegroundColorAttributeName] = color
+    attributes[NSAttributedStringKey.foregroundColor] = color
   }
   let fontName = stringForKey("\(prefix)FontName", props)
   let fontSize = floatForKey("\(prefix)FontSize", props)
   // TODO(lmr): use system font if no fontname is given
   if let name = fontName, let size = fontSize {
     if let font = UIFont(name: name, size: size) {
-      attributes[NSFontAttributeName] = font
+      attributes[NSAttributedStringKey.font] = font
     }
   }
   return attributes.count == 0 ? nil : attributes
@@ -360,23 +360,11 @@ open class DefaultReactNavigationImplementation: ReactNavigationImplementation {
     navigationController: UINavigationController?,
     config: [String: AnyObject]
   ) -> CGFloat {
-    var statusBarHidden = false
-    var navBarHidden = false
-    var hasPrompt = false;
-    if let hidden = boolForKey("statusBarHidden", config) {
-      statusBarHidden = hidden
+    guard viewController.isViewLoaded else {
+      return 0
     }
-    if let hidden = boolForKey("hidden", config) {
-      navBarHidden = hidden
-    }
-    if stringForKey("prompt", config) != nil {
-      hasPrompt = true
-    }
-    if let navController = navigationController {
-      return navController.navigationBar.frame.height + (statusBarHidden ? 0 : 20)
-    }
-    // make a best guess based on config
-    return (statusBarHidden ? 0 : 20) + (navBarHidden ? 0 : 44) + (hasPrompt ? 30 : 0)
+
+    return viewController.topLayoutGuide.length
   }
 
   public func makeNavigationController(rootViewController: UIViewController) -> UINavigationController {
@@ -500,7 +488,6 @@ open class DefaultReactNavigationImplementation: ReactNavigationImplementation {
 
     let navItem = viewController.navigationItem
 
-
     if let titleView = titleAndSubtitleViewFromProps(next) {
       if let title = stringForKey("title", next) {
         // set the title anyway, for accessibility
@@ -510,6 +497,13 @@ open class DefaultReactNavigationImplementation: ReactNavigationImplementation {
     } else if let title = stringForKey("title", next) {
       navItem.titleView = nil
       viewController.title = title
+    }
+
+    if #available(iOS 11.0, *) {
+      let prefersLargeTitles = boolForKey("prefersLargeTitles", next) ?? false
+
+      viewController.navigationController?.navigationBar.prefersLargeTitles = prefersLargeTitles
+      viewController.navigationItem.largeTitleDisplayMode = .automatic
     }
 
     if let screenColor = colorForKey("screenColor", next) {
@@ -581,7 +575,13 @@ open class DefaultReactNavigationImplementation: ReactNavigationImplementation {
       let navBar = navController.navigationBar
 
       if let titleAttributes = textAttributesFromPrefix("title", next) {
-        navBar.titleTextAttributes = titleAttributes
+        var combined = titleAttributes
+
+        if let appearance = UINavigationBar.appearance().titleTextAttributes {
+          combined = appearance.combineWith(values: titleAttributes)
+        }
+
+        navBar.titleTextAttributes = combined
       }
 
       if let backIndicatorImage = imageForKey("backIndicatorImage", next) {

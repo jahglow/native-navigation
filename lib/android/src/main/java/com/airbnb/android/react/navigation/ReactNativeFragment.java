@@ -25,8 +25,10 @@ import android.view.animation.Animation;
 import com.airbnb.android.R;
 import com.facebook.react.ReactInstanceManager;
 import com.facebook.react.ReactRootView;
+import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.devsupport.DoubleTapReloadRecognizer;
 import com.facebook.react.modules.core.PermissionListener;
 
@@ -67,6 +69,7 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
   private boolean isSharedElementTransition;
   private boolean isWaitingForRenderToFinish = false;
   private float barHeight;
+  private boolean prefersBottomBarHidden = false;
   private ReadableMap initialConfig = ConversionUtil.EMPTY_MAP;
   private ReadableMap previousConfig = ConversionUtil.EMPTY_MAP;
   private ReadableMap renderedConfig = ConversionUtil.EMPTY_MAP;
@@ -79,11 +82,18 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
   private ReactToolbar toolbar;
   private View loadingView;
 
+  private int tabId;
+
   static ReactNativeFragment newInstance(String moduleName, @Nullable Bundle props) {
+    return newInstance(moduleName, props, false);
+  }
+
+  static ReactNativeFragment newInstance(String moduleName, @Nullable Bundle props, boolean mainFragment) {
     ReactNativeFragment frag = new ReactNativeFragment();
     Bundle args = new BundleBuilder()
             .putString(ReactNativeIntents.EXTRA_MODULE_NAME, moduleName)
             .putBundle(ReactNativeIntents.EXTRA_PROPS, props)
+            .putBoolean("mainFragment", mainFragment)
             .toBundle();
     frag.setArguments(args);
     return frag;
@@ -117,6 +127,14 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
     initReactNative();
   }
 
+  public void setTabId(int id) {
+    tabId = id;
+  }
+
+  public int getTabId() { return tabId; }
+
+  public boolean isMainFragment() { return getArguments().getBoolean("mainFragment"); }
+
   private void initReactNative() {
     if (reactRootView != null || getView() == null) {
       return;
@@ -124,19 +142,18 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
     if (!isSuccessfullyInitialized()) {
       // TODO(lmr): need a different way of doing this
       // TODO(lmr): move to utils
-      reactInstanceManager.addReactInstanceEventListener(
-              new ReactInstanceManager.ReactInstanceEventListener() {
-                @Override
-                public void onReactContextInitialized(ReactContext context) {
-                  reactInstanceManager.removeReactInstanceEventListener(this);
-                  handler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                      onAttachWithReactContext();
-                    }
-                  });
-                }
-              });
+      reactNavigationCoordinator.addReactInstanceEventListener( new ReactInstanceManager.ReactInstanceEventListener() {
+        @Override
+        public void onReactContextInitialized(ReactContext context) {
+          reactNavigationCoordinator.removeReactInstanceEventListener(this);
+          handler.post(new Runnable() {
+            @Override
+            public void run() {
+              onAttachWithReactContext();
+            }
+          });
+        }
+      });
     } else {
       onAttachWithReactContext();
       // in this case, we end up waiting for the first render to complete
@@ -224,7 +241,7 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
     });
 
     String moduleName = getArguments().getString(EXTRA_REACT_MODULE_NAME);
-    Log.d(TAG, "onCreateView " + moduleName);
+    Log.d(TAG, "onCreateView " + this);
 
     initialConfig = reactNavigationCoordinator.getInitialConfigForModuleName(moduleName);
     // for reconciliation, we save this in "renderedConfig" until the real one comes down
@@ -303,15 +320,26 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
   @Override
   public void onResume() {
     super.onResume();
-    Log.d(TAG, "onResume");
+    Log.d(TAG, "onResume " + this);
+
+    if (getActivity() instanceof ReactNativeTabActivity) {
+      ReactNativeTabActivity rnta = (ReactNativeTabActivity)getActivity();
+      rnta.toggleBottomNavigationHidden(prefersBottomBarHidden);
+    }
+
     updateBarHeightIfNeeded();
     emitEvent(ON_APPEAR, null);
   }
 
   @Override public void onDestroyView() {
-    Log.d(TAG, "onDestroyView");
+    Log.d(TAG, "onDestroyView " + this);
     super.onDestroyView();
     reactNavigationCoordinator.unregisterComponent(instanceId);
+    
+    ReactRootView rootView = getReactRootView();
+    if (rootView != null) {
+      rootView.unmountReactApplication();
+    }
   }
 
   @Override
@@ -406,6 +434,18 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
   }
 
   @Override
+  public void invalidateMenu() {
+    getImplementation().prepareOptionsMenu(
+        this,
+        getToolbar(),
+        null,
+        getToolbar().getMenu(),
+        this.previousConfig,
+        this.renderedConfig
+    );
+  }
+
+  @Override
   public void onPrepareOptionsMenu(Menu menu) {
     getImplementation().prepareOptionsMenu(
             this,
@@ -438,7 +478,7 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
     getImplementation().reconcileNavigationProperties(
             this,
             getToolbar(),
-            null,
+            activity.getSupportActionBar(),
             this.previousConfig,
             this.renderedConfig,
             false
@@ -447,6 +487,7 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
 
   @Override
   public void receiveNavigationProperties(ReadableMap properties) {
+    Log.d(TAG, "receiveNavigationProperties: " + this + ", " + properties);
     this.previousConfig = this.renderedConfig;
     this.renderedConfig = ConversionUtil.combine(this.initialConfig, properties);
     reconcileNavigationProperties();
@@ -463,7 +504,11 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
     );
     if (newHeight != barHeight) {
       barHeight = newHeight;
-      emitEvent("onBarHeightChanged", barHeight);
+      WritableMap map = Arguments.createMap();
+      map.putDouble("height", barHeight);
+      map.putBoolean("force", false);
+
+      emitEvent("onBarHeightChanged", map);
     }
   }
 
@@ -472,5 +517,23 @@ public class ReactNativeFragment extends Fragment implements ReactInterface,
           PermissionListener listener) {
     permissionListener = listener;
     requestPermissions(permissions, requestCode);
+  }
+
+  public boolean isPrefersBottomBarHidden() {
+    return prefersBottomBarHidden;
+  }
+
+  public void setPrefersBottomBarHidden(boolean prefersBottomBarHidden) {
+    this.prefersBottomBarHidden = prefersBottomBarHidden;
+
+    if (getActivity() instanceof ReactNativeTabActivity) {
+      ReactNativeTabActivity rnta = (ReactNativeTabActivity)getActivity();
+      rnta.toggleBottomNavigationHidden(prefersBottomBarHidden);
+    }
+  }
+
+  @Override
+  public String toString() {
+    return getArguments().getString(ReactNativeIntents.EXTRA_MODULE_NAME) + " - " + super.toString();
   }
 }

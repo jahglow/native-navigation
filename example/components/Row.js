@@ -17,6 +17,8 @@ const propTypes = {
 };
 
 const defaultProps = {
+  onPress: undefined,
+  subtitle: undefined,
 };
 
 export default class Row extends React.Component {

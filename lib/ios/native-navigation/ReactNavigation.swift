@@ -19,12 +19,17 @@ class ReactNavigation: NSObject {
     coordinator = ReactNavigationCoordinator.sharedInstance
   }
 
+  @objc static func requiresMainQueueSetup() -> Bool {
+    return true
+  }
+
   func constantsToExport() -> [String: Any] {
     return [
       "VERSION": VERSION
     ]
   }
 
+  @objc(registerScreen:properties:waitForRender:mode:)
   func registerScreen(
     _ screenName: String,
     properties: [String: AnyObject],
@@ -35,6 +40,7 @@ class ReactNavigation: NSObject {
     coordinator.registerScreenProperties(screenName, properties: properties)
   }
 
+  @objc(setScreenProperties:withInstanceId:)
   func setScreenProperties(_ props: [String: AnyObject], withInstanceId instanceId: String) {
     if let vc = coordinator.viewControllerForId(instanceId) {
       DispatchQueue.main.async {
@@ -50,6 +56,7 @@ class ReactNavigation: NSObject {
     }
   }
 
+  @objc(signalFirstRenderComplete:)
   func signalFirstRenderComplete(_ instanceId: String) {
     if let vc = coordinator.viewControllerForId(instanceId) {
       DispatchQueue.main.async {
@@ -59,7 +66,8 @@ class ReactNavigation: NSObject {
   }
 
   // MARK Transitions
-  
+
+  @objc(push:withProps:options:resolve:reject:)
   func push(_ screenName: String, withProps props: [String: AnyObject], options: [String: AnyObject], resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     print("push \(screenName)")
     DispatchQueue.main.async {
@@ -71,6 +79,8 @@ class ReactNavigation: NSObject {
 
       let pushed = ReactViewController(moduleName: screenName, props: props)
       pushed.delegate = current.delegate
+
+      pushed.prefersBottomBarHidden = options["prefersBottomBarHidden"] as? Bool ?? current.prefersBottomBarHidden
 
       let animated = (options["animated"] as? Bool) ?? true
       var makeTransition: (() -> ReactSharedElementTransition)? = nil
@@ -92,17 +102,18 @@ class ReactNavigation: NSObject {
     }
   }
 
+  @objc(pushNative:withProps:options:resolve:reject:)
   func pushNative(_ name: String, withProps props: [String: AnyObject], options: [String: AnyObject], resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     print("pushNative: \(name)")
     DispatchQueue.main.async {
       self.coordinator.startFlow(fromName: name, withProps: props, resolve: resolve, reject: reject)
     }
   }
-  
+
+  @objc(present:withProps:options:resolve:reject:)
   func present(_ screenName: String, withProps props: [String: AnyObject], options: [String: AnyObject], resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     print("present \(screenName)")
     DispatchQueue.main.async {
-      guard let nav = self.coordinator.topNavigationController() else { return }
       guard let current = self.coordinator.topViewController() as? ReactViewController else {
         print("Called present() when topViewController() isn't a ReactViewController")
         return
@@ -125,7 +136,7 @@ class ReactNavigation: NSObject {
       }
 
       self.coordinator.registerFlow(presented, resolve: resolve, reject: reject)
-      nav.presentReactViewController(presented, animated: animated, completion: nil, presentationStyle: self.modalPresentationStyle(from: options), makeTransition: makeTransition)
+      current.presentReactViewController(presented, animated: animated, completion: nil, presentationStyle: self.modalPresentationStyle(from: options), makeTransition: makeTransition)
     }
   }
   
@@ -147,7 +158,8 @@ class ReactNavigation: NSObject {
     default:                    return .fullScreen // This is the system default
     }
   }
-  
+
+  @objc(presentNative:withProps:options:resolve:reject:)
   func presentNative(_ name: String, withProps props: [String: AnyObject], options: [String: AnyObject], resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     print("presentNative: \(name)")
     DispatchQueue.main.async {
@@ -155,6 +167,7 @@ class ReactNavigation: NSObject {
     }
   }
 
+  @objc(dismiss:animated:)
   func dismiss(_ payload: [String: AnyObject], animated: Bool) {
     print("dismiss")
     DispatchQueue.main.async {
@@ -164,7 +177,8 @@ class ReactNavigation: NSObject {
       vc.dismiss(animated: animated, completion: nil)
     }
   }
-  
+
+  @objc(pop:animated:)
   func pop(_ payload: [String: AnyObject], animated: Bool) {
     print("pop")
     // if top VC is being presented in a TabBarController, pop will pop all of the
@@ -186,6 +200,7 @@ class ReactNavigation: NSObject {
     }
   }
 
+  @objc(replace:withProps:animated:)
   func replace(_ screenName: String, withProps props: [String: AnyObject], animated: Bool) {
     print("replace \(screenName)")
     DispatchQueue.main.async {
